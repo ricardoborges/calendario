@@ -8,16 +8,18 @@
 
 <div class="info">
   <p>
-    👋 <strong>Olá!</strong> Se você imprimir esta página, terá um calendário prático
+    <strong>Olá!</strong> Se você imprimir esta página, terá um calendário prático
     que exibe todas as datas do ano em uma única página. Ele se ajustará automaticamente
     a uma folha de papel de qualquer tamanho. Para melhores resultados, ajuste as
-    configurações de impressão para orientação paisagem e desative o cabeçalho e
-    rodapé.
+    configurações de impressão para orientação paisagem, desative o cabeçalho e rodapé.
+  </p>
+  <p>
+    Se você quiser editar o calendário antes de imprimir, clique no botão
+    "Editar Calendário".
   </p>
   <p>
     Visualize o ano inteiro de uma só vez. Dobre-o e leve consigo. Faça suas
-    anotações nele. Planeje as coisas e observe a passagem do tempo. Acima de
-    tudo, seja gentil com os outros.
+    anotações nele. Planeje as coisas e observe a passagem do tempo.
   </p>
   <div class="button-group">
     <button class="btn edit-btn" on:click={enterEditMode}>
