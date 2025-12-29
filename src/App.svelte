@@ -37,26 +37,35 @@
     // Inicializa com dados default se o store estiver vazio
     const initialEvents = $eventsStore;
     if (initialEvents.length === 0) {
+      const loadEvents = async (url: string) => {
+        const response = await fetch(url);
+        if (!response.ok) throw new Error(`Falha ao carregar ${url}`);
+        const data = await response.json();
+        return data.map((item: { data: string; descrição: string }) => {
+          const [day, month, year] = item.data.split("/");
+          return {
+            id: crypto.randomUUID(),
+            date: `${year}-${month.padStart(2, "0")}-${day.padStart(2, "0")}`,
+            text: item.descrição,
+            bgColor: "#e3f2fd", // Azul claro
+            textColor: "#000000", // Preto
+          };
+        });
+      };
+
       try {
-        const response = await fetch("/init.json");
-        if (response.ok) {
-          const data = await response.json();
-          const formattedEvents = data.map(
-            (item: { data: string; descrição: string }) => {
-              const [day, month, year] = item.data.split("/");
-              return {
-                id: crypto.randomUUID(),
-                date: `${year}-${month.padStart(2, "0")}-${day.padStart(2, "0")}`,
-                text: item.descrição,
-                bgColor: "#e3f2fd", // Azul claro
-                textColor: "#000000", // Preto
-              };
-            },
-          );
+        // Tenta carregar localmente primeiro
+        const formattedEvents = await loadEvents("/init.json");
+        eventsStore.set(formattedEvents);
+      } catch (localError) {
+        console.warn("Arquivo init.json local não encontrado, tentando fallback externo...");
+        try {
+          // Fallback para URL externa
+          const formattedEvents = await loadEvents("https://ricardoborges.github.io/calendario/init.json");
           eventsStore.set(formattedEvents);
+        } catch (externalError) {
+          console.error("Erro ao carregar init.json de ambas as fontes:", externalError);
         }
-      } catch (error) {
-        console.error("Erro ao carregar init.json:", error);
       }
     }
   });
