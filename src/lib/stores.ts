@@ -9,7 +9,17 @@ export interface CalendarEvent {
 }
 
 function createEventsStore() {
-    const { subscribe, set, update } = writable<CalendarEvent[]>([]);
+    const savedEvents = typeof window !== 'undefined' ? localStorage.getItem('calendar-events') : null;
+    const initialEvents: CalendarEvent[] = savedEvents ? JSON.parse(savedEvents) : [];
+    
+    const { subscribe, set, update } = writable<CalendarEvent[]>(initialEvents);
+
+    // Persistência automática
+    if (typeof window !== 'undefined') {
+        subscribe(events => {
+            localStorage.setItem('calendar-events', JSON.stringify(events));
+        });
+    }
 
     return {
         subscribe,
@@ -31,6 +41,7 @@ function createEventsStore() {
             const dateStr = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
             return events.filter(e => e.date === dateStr);
         },
+        set: (events: CalendarEvent[]) => set(events),
         clear: () => set([])
     };
 }

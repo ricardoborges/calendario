@@ -244,6 +244,129 @@
     function formatCurrentDate(): string {
         return `${String(eventDay).padStart(2, "0")}/${String(eventMonth).padStart(2, "0")}`;
     }
+
+    // --- Lógica de Feriadão ---
+    let showFeriadaoModal = false;
+    let feriadaoSortOrder: "date" | "days" = "date";
+
+    interface Feriadao {
+        description: string;
+        month: string;
+        totalDays: number;
+        startDate: Date;
+    }
+
+    function getFeriadaos(): Feriadao[] {
+        const yearEvents = $eventsStore.filter((e) =>
+            e.date.startsWith(year.toString()),
+        );
+        if (yearEvents.length === 0) return [];
+
+        const feriadaos: Feriadao[] = [];
+        const processedDates = new Set<string>();
+
+        // Agrupar eventos por data (pode haver mais de um no mesmo dia)
+        const eventsByDate: Record<string, string[]> = {};
+        yearEvents.forEach((e) => {
+            if (!eventsByDate[e.date]) eventsByDate[e.date] = [];
+            eventsByDate[e.date].push(e.text);
+        });
+
+        // Loop por todos os dias do ano para encontrar blocos de folga
+        const start = new Date(year, 0, 1);
+        const end = new Date(year, 11, 31);
+        let current = new Date(start);
+
+        while (current <= end) {
+            const y = current.getFullYear();
+            const m = String(current.getMonth() + 1).padStart(2, "0");
+            const d = String(current.getDate()).padStart(2, "0");
+            const dateStr = `${y}-${m}-${d}`;
+
+            const isWeekend = current.getDay() === 0 || current.getDay() === 6;
+            const hasHoliday = !!eventsByDate[dateStr];
+
+            if ((isWeekend || hasHoliday) && !processedDates.has(dateStr)) {
+                // Encontramos o início de um possível bloco de folga
+                let blockDates: Date[] = [];
+                let blockHasHoliday = false;
+                let blockHasWeekend = false;
+                let temp = new Date(current);
+
+                // Expandir o bloco para frente
+                while (temp <= end) {
+                    const ty = temp.getFullYear();
+                    const tm = String(temp.getMonth() + 1).padStart(2, "0");
+                    const td = String(temp.getDate()).padStart(2, "0");
+                    const tStr = `${ty}-${tm}-${td}`;
+
+                    const tIsWeekend =
+                        temp.getDay() === 0 || temp.getDay() === 6;
+                    const tHasHoliday = !!eventsByDate[tStr];
+
+                    if (tIsWeekend || tHasHoliday) {
+                        blockDates.push(new Date(temp));
+                        processedDates.add(tStr);
+                        if (tHasHoliday) blockHasHoliday = true;
+                        if (tIsWeekend) blockHasWeekend = true;
+                        temp.setDate(temp.getDate() + 1);
+                    } else {
+                        break;
+                    }
+                }
+
+                // Expandir o bloco para trás (caso tenhamos começado no meio)
+                // Na verdade, como estamos percorrendo o ano em ordem, não precisa expandir para trás
+                // se mantivermos o controle de processedDates.
+
+                // Um feriadão deve ter feriado E estar conectado a um fim de semana
+                if (blockHasHoliday && blockHasWeekend) {
+                    // Descrições únicas dos feriados no bloco
+                    const descriptions = Array.from(
+                        new Set(
+                            blockDates.flatMap((d) => {
+                                const dy = d.getFullYear();
+                                const dm = String(d.getMonth() + 1).padStart(
+                                    2,
+                                    "0",
+                                );
+                                const dd = String(d.getDate()).padStart(2, "0");
+                                const dStr = `${dy}-${dm}-${dd}`;
+                                return eventsByDate[dStr] || [];
+                            }),
+                        ),
+                    ).join(" + ");
+
+                    const firstHolidayDate = blockDates.find((d) => {
+                        const dy = d.getFullYear();
+                        const dm = String(d.getMonth() + 1).padStart(2, "0");
+                        const dd = String(d.getDate()).padStart(2, "0");
+                        const dStr = `${dy}-${dm}-${dd}`;
+                        return !!eventsByDate[dStr];
+                    });
+
+                    const monthName = firstHolidayDate
+                        ? months[firstHolidayDate.getMonth()].name
+                        : months[blockDates[0].getMonth()].name;
+
+                    feriadaos.push({
+                        description: descriptions || "Feriado",
+                        month: monthName,
+                        totalDays: blockDates.length,
+                        startDate: blockDates[0],
+                    });
+                }
+            }
+            current.setDate(current.getDate() + 1);
+        }
+
+        return feriadaos;
+    }
+
+    $: feriadaosList = getFeriadaos().sort((a, b) => {
+        if (feriadaoSortOrder === "days") return b.totalDays - a.totalDays;
+        return a.startDate.getTime() - b.startDate.getTime();
+    });
 </script>
 
 <div class="toolbar">
@@ -252,6 +375,12 @@
         Clique em uma data para adicionar/editar eventos
     </div>
     <div class="toolbar-actions">
+        <button
+            class="btn btn-feriadao"
+            on:click={() => (showFeriadaoModal = true)}
+        >
+            🏖️ Feriadão
+        </button>
         <button class="btn btn-add" on:click={openAddModal}>
             ➕ Incluir
         </button>
@@ -459,6 +588,75 @@
     </div>
 {/if}
 
+{#if showFeriadaoModal}
+    <div
+        class="modal-overlay"
+        on:click={() => (showFeriadaoModal = false)}
+        on:keydown={(e) => e.key === "Escape" && (showFeriadaoModal = false)}
+        role="button"
+        tabindex="0"
+    >
+        <div
+            class="modal modal-wide"
+            on:click|stopPropagation
+            on:keydown|stopPropagation
+            role="dialog"
+            aria-modal="true"
+            tabindex="-1"
+        >
+            <h2>🏖️ Feriadões de {year}</h2>
+            <div class="feriadao-sort">
+                <span>Ordenar por:</span>
+                <div class="toggle-group">
+                    <button
+                        class:active={feriadaoSortOrder === "date"}
+                        on:click={() => (feriadaoSortOrder = "date")}
+                    >
+                        Data
+                    </button>
+                    <button
+                        class:active={feriadaoSortOrder === "days"}
+                        on:click={() => (feriadaoSortOrder = "days")}
+                    >
+                        Total de Dias
+                    </button>
+                </div>
+            </div>
+
+            <div class="feriadao-container">
+                <div class="feriadao-header">
+                    <div class="col-desc">Descrição do Feriado</div>
+                    <div class="col-month">Mês</div>
+                    <div class="col-days">Total de Dias</div>
+                </div>
+                <div class="feriadao-list">
+                    {#each feriadaosList as f}
+                        <div class="feriadao-item">
+                            <div class="col-desc">{f.description}</div>
+                            <div class="col-month">{f.month}</div>
+                            <div class="col-days">
+                                <span class="badge">{f.totalDays} dias</span>
+                            </div>
+                        </div>
+                    {/each}
+                    {#if feriadaosList.length === 0}
+                        <div class="no-data">
+                            Nenhum feriadão encontrado para este ano.
+                        </div>
+                    {/if}
+                </div>
+            </div>
+
+            <div class="modal-actions">
+                <button
+                    class="btn btn-cancel"
+                    on:click={() => (showFeriadaoModal = false)}>Fechar</button
+                >
+            </div>
+        </div>
+    </div>
+{/if}
+
 <style>
     .toolbar {
         position: fixed;
@@ -500,6 +698,16 @@
         font-family: "Inter", sans-serif;
         font-weight: 500;
         transition: all 0.2s ease;
+    }
+
+    .btn-feriadao {
+        background: rgba(255, 255, 255, 0.2);
+        color: white;
+        margin-right: 0.5em;
+    }
+
+    .btn-feriadao:hover {
+        background: rgba(255, 255, 255, 0.3);
     }
 
     .btn-add {
@@ -741,6 +949,115 @@
         font-weight: 500;
         text-align: center;
         border: 1px solid #ddd;
+    }
+
+    .modal.modal-wide {
+        max-width: 700px;
+    }
+
+    .feriadao-sort {
+        display: flex;
+        align-items: center;
+        gap: 1em;
+        margin-bottom: 1.5em;
+        font-size: 0.9em;
+        color: #666;
+    }
+
+    .toggle-group {
+        display: flex;
+        background: #f1f3f5;
+        padding: 3px;
+        border-radius: 6px;
+    }
+
+    .toggle-group button {
+        padding: 5px 12px;
+        border: none;
+        background: transparent;
+        cursor: pointer;
+        font-size: 0.85em;
+        font-weight: 600;
+        color: #777;
+        border-radius: 4px;
+        transition: all 0.2s;
+    }
+
+    .toggle-group button.active {
+        background: white;
+        color: #667eea;
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    }
+
+    .feriadao-container {
+        border: 1px solid #eee;
+        border-radius: 0.5em;
+        overflow: hidden;
+    }
+
+    .feriadao-header {
+        display: flex;
+        background: #f8f9fa;
+        padding: 0.8em 1em;
+        font-weight: 600;
+        font-size: 0.85em;
+        color: #555;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        border-bottom: 1px solid #eee;
+    }
+
+    .feriadao-list {
+        max-height: 400px;
+        overflow-y: auto;
+    }
+
+    .feriadao-item {
+        display: flex;
+        align-items: center;
+        padding: 0.8em 1em;
+        border-bottom: 1px solid #f1f1f1;
+        transition: background 0.2s;
+    }
+
+    .feriadao-item:last-child {
+        border-bottom: none;
+    }
+
+    .feriadao-item:hover {
+        background: #fcfcfc;
+    }
+
+    .col-desc {
+        flex: 2;
+        font-weight: 500;
+        color: #333;
+    }
+
+    .col-month {
+        flex: 1;
+        color: #666;
+    }
+
+    .col-days {
+        flex: 1;
+        text-align: right;
+    }
+
+    .badge {
+        background: #e3f2fd;
+        color: #1976d2;
+        padding: 0.3em 0.8em;
+        border-radius: 2em;
+        font-size: 0.85em;
+        font-weight: 600;
+    }
+
+    .no-data {
+        padding: 2em;
+        text-align: center;
+        color: #999;
+        font-style: italic;
     }
 
     @media print {
